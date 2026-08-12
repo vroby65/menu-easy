@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Menu Easy
+Comment=Browse and launch installed applications
+Comment[it]=Sfoglia e avvia le applicazioni installate
+Exec=menu-easy
+Icon=menu-easy
+Terminal=false
+Categories=System;Utility;
+StartupWMClass=menu-easy
+NoDisplay=true
