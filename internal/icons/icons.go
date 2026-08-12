@@ -78,7 +78,8 @@ func (l *Loader) candidates(name string) []string {
 		return []string{name}
 	}
 	extensions := []string{".png", ".jpg", ".jpeg"}
-	if ext := strings.ToLower(filepath.Ext(name)); ext != "" {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".xpm":
 		extensions = []string{""}
 	}
 	sizes := []string{"64", "48", "96", "32", "128", "256"}
