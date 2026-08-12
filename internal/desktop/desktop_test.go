@@ -49,6 +49,7 @@ func TestParseVisibility(t *testing.T) {
 		{"only matching", "OnlyShowIn=MATE;GNOME;", []string{"MATE"}, true},
 		{"only different", "OnlyShowIn=KDE;", []string{"MATE"}, false},
 		{"excluded", "NotShowIn=MATE;", []string{"MATE"}, false},
+		{"screensaver", "Categories=Screensaver;", []string{"MATE"}, false},
 		{"normal", "", []string{"MATE"}, true},
 	}
 	for _, tt := range tests {

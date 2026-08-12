@@ -100,6 +100,9 @@ func Parse(path string, data []byte, desktops []string) (Entry, error) {
 		return Entry{}, errors.New("desktop entry requires Name and Exec")
 	}
 	entry.Visible = !entry.Hidden && !parseBool(values["NoDisplay"])
+	if containsFold(entry.Categories, "Screensaver") {
+		entry.Visible = false
+	}
 	if entry.Visible && len(desktops) > 0 {
 		only := splitList(values["OnlyShowIn"])
 		not := splitList(values["NotShowIn"])
@@ -405,6 +408,15 @@ func intersectsFold(a, b []string) bool {
 			if strings.EqualFold(left, right) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func containsFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, target) {
+			return true
 		}
 	}
 	return false

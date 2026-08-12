@@ -2,13 +2,19 @@ package icons
 
 import (
 	"bufio"
+	"compress/gzip"
+	"errors"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/srwiley/oksvg"
+	"github.com/srwiley/rasterx"
 )
 
 type cached struct {
@@ -16,7 +22,7 @@ type cached struct {
 	found bool
 }
 
-// Loader resolves PNG/JPEG application icons from the active GTK theme and
+// Loader resolves PNG/JPEG/GIF/SVG application icons from the active GTK theme and
 // the freedesktop hicolor fallback. Unsupported formats simply use the UI's
 // generated fallback tile.
 type Loader struct {
@@ -58,13 +64,7 @@ func (l *Loader) Load(name string) (image.Image, bool) {
 	}
 	paths := l.candidates(name)
 	for _, path := range paths {
-		file, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		img, _, err := image.Decode(file)
-		file.Close()
-		if err == nil {
+		if img, err := decode(path); err == nil {
 			l.cache[name] = cached{image: img, found: true}
 			return img, true
 		}
@@ -77,7 +77,7 @@ func (l *Loader) candidates(name string) []string {
 	if filepath.IsAbs(name) {
 		return []string{name}
 	}
-	extensions := []string{".png", ".jpg", ".jpeg"}
+	extensions := []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz"}
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".xpm":
 		extensions = []string{""}
@@ -91,11 +91,16 @@ func (l *Loader) candidates(name string) []string {
 				for _, size := range sizes {
 					result = append(result, filepath.Join(root, theme, "apps", size, name+ext))
 				}
+				result = append(result, filepath.Join(root, theme, "apps", "scalable", name+ext))
 				for _, size := range xdgSizes {
 					result = append(result, filepath.Join(root, theme, size, "apps", name+ext))
 				}
+				result = append(result, filepath.Join(root, theme, "scalable", "apps", name+ext))
 				result = append(result, filepath.Join(root, theme, name+ext))
 			}
+		}
+		for _, ext := range extensions {
+			result = append(result, filepath.Join(root, name+ext))
 		}
 	}
 	for _, dataDir := range append([]string{filepath.Dir(l.roots[0])}, filepath.SplitList(defaultDataDirs())...) {
@@ -104,6 +109,52 @@ func (l *Loader) candidates(name string) []string {
 		}
 	}
 	return result
+}
+
+func decode(path string) (image.Image, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".svg":
+		return decodeSVG(file)
+	case ".svgz":
+		reader, err := gzip.NewReader(file)
+		if err != nil {
+			return nil, err
+		}
+		defer reader.Close()
+		return decodeSVG(reader)
+	default:
+		img, _, err := image.Decode(file)
+		return img, err
+	}
+}
+
+func decodeSVG(reader io.Reader) (image.Image, error) {
+	icon, err := oksvg.ReadIconStream(reader, oksvg.IgnoreErrorMode)
+	if err != nil {
+		return nil, err
+	}
+	if icon.ViewBox.W <= 0 || icon.ViewBox.H <= 0 {
+		return nil, errors.New("svg icon has invalid size")
+	}
+
+	const size = 64
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	w, h := float64(size), float64(size)
+	if icon.ViewBox.W > icon.ViewBox.H {
+		h = w * icon.ViewBox.H / icon.ViewBox.W
+	} else {
+		w = h * icon.ViewBox.W / icon.ViewBox.H
+	}
+	icon.SetTarget((size-w)/2, (size-h)/2, w, h)
+	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
+	icon.Draw(rasterx.NewDasher(size, size, scanner), 1)
+	return img, nil
 }
 
 func gtkIconTheme() string {
