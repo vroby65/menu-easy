@@ -22,6 +22,7 @@ import (
 	"menu-easy/internal/desktop"
 	appicons "menu-easy/internal/icons"
 	"menu-easy/internal/launch"
+	"menu-easy/internal/windowctrl"
 )
 
 var palette = struct {
@@ -121,11 +122,15 @@ func New(window *app.Window, entries []desktop.Entry, cfg config.Config, configP
 func Run(window *app.Window, menu *Menu) error {
 	var ops op.Ops
 	hadFocus := false
+	var controller windowctrl.Controller
 	for {
-		switch event := window.Event().(type) {
+		event := window.Event()
+		controller.HandleEvent(event)
+		switch event := event.(type) {
 		case app.DestroyEvent:
 			return event.Err
 		case app.ConfigEvent:
+			controller.SetSize(event.Config.Size)
 			if event.Config.Focused {
 				hadFocus = true
 			} else if hadFocus {
