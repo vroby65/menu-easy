@@ -105,21 +105,38 @@ func standaloneIconDirs() []string {
 }
 
 func (l *Loader) Load(name string) (image.Image, bool) {
+	return l.load(name, false)
+}
+
+// LoadRaster behaves like Load but only accepts raster formats (PNG, JPEG,
+// GIF, XPM). SVG documents are skipped: the bundled SVG decoder renders many
+// real-world theme SVGs incorrectly (smeared gradients, solid blocks), so
+// callers that have a fallback use LoadRaster to show a theme icon only when
+// it can be rendered faithfully.
+func (l *Loader) LoadRaster(name string) (image.Image, bool) {
+	return l.load(name, true)
+}
+
+func (l *Loader) load(name string, rasterOnly bool) (image.Image, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, false
 	}
-	if value, ok := l.cache[name]; ok {
+	key := name
+	if rasterOnly {
+		key = "raster:" + name
+	}
+	if value, ok := l.cache[key]; ok {
 		return value.image, value.found
 	}
 	paths := l.candidates(name)
 	for _, path := range paths {
-		if img, err := decode(path); err == nil {
-			l.cache[name] = cached{image: img, found: true}
+		if img, err := decode(path, rasterOnly); err == nil {
+			l.cache[key] = cached{image: img, found: true}
 			return img, true
 		}
 	}
-	l.cache[name] = cached{}
+	l.cache[key] = cached{}
 	return nil, false
 }
 
@@ -229,7 +246,9 @@ func directCandidates(path string) []string {
 	return result
 }
 
-func decode(path string) (image.Image, error) {
+// decode loads the image at path. When rasterOnly is set, SVG documents are
+// skipped so the caller can fall back to an alternative icon.
+func decode(path string, rasterOnly bool) (image.Image, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -238,21 +257,29 @@ func decode(path string) (image.Image, error) {
 
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".svg":
-		return decodeSVG(file)
+		if rasterOnly {
+			return nil, errors.New("svg skipped in raster-only mode")
+		}
+		return DecodeSVG(file)
 	case ".svgz":
+		if rasterOnly {
+			return nil, errors.New("svgz skipped in raster-only mode")
+		}
 		reader, err := gzip.NewReader(file)
 		if err != nil {
 			return nil, err
 		}
 		defer reader.Close()
-		return decodeSVG(reader)
+		return DecodeSVG(reader)
 	default:
 		img, _, err := image.Decode(file)
 		return img, err
 	}
 }
 
-func decodeSVG(reader io.Reader) (image.Image, error) {
+// DecodeSVG renders an SVG document onto a 64x64 RGBA canvas, preserving the
+// document's aspect ratio.
+func DecodeSVG(reader io.Reader) (image.Image, error) {
 	icon, err := oksvg.ReadIconStream(reader, oksvg.IgnoreErrorMode)
 	if err != nil {
 		return nil, err

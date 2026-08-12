@@ -112,6 +112,47 @@ func TestLoadActionsIcon(t *testing.T) {
 	}
 }
 
+func TestLoadRasterSkipsSVG(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "TestTheme", "actions", "48", "demo.svg")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#ff0000"/></svg>`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &Loader{
+		themes: []string{"TestTheme"},
+		roots:  []string{root},
+		cache:  make(map[string]cached),
+	}
+	if _, found := loader.Load("demo"); !found {
+		t.Fatal("Load should accept the SVG icon")
+	}
+	if _, found := loader.LoadRaster("demo"); found {
+		t.Fatal("LoadRaster should skip the SVG icon")
+	}
+}
+
+func TestLoadRasterAcceptsPNG(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "TestTheme", "actions", "48", "demo.png")
+	if err := writePNG(path); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &Loader{
+		themes: []string{"TestTheme"},
+		roots:  []string{root},
+		cache:  make(map[string]cached),
+	}
+	if _, found := loader.LoadRaster("demo"); !found {
+		t.Fatal("LoadRaster should accept the PNG icon")
+	}
+}
+
 func TestLoadDirectRootIcon(t *testing.T) {
 	root := t.TempDir()
 	if err := writePNG(filepath.Join(root, "freedoom.png")); err != nil {

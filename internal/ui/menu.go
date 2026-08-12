@@ -227,7 +227,7 @@ func (m *Menu) Layout(gtx layout.Context) layout.Dimensions {
 			return m.layoutBody(gtx, visible)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return exactHeight(gtx, 48, m.layoutFooter)
+			return exactHeight(gtx, 60, m.layoutFooter)
 		}),
 	)
 }
@@ -605,7 +605,7 @@ func (m *Menu) layoutAppText(gtx layout.Context, entry desktop.Entry) layout.Dim
 
 func (m *Menu) layoutFooter(gtx layout.Context) layout.Dimensions {
 	fillBackground(gtx, palette.header)
-	return layout.Inset{Left: 16, Right: 16, Top: 8, Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: 16, Right: 16, Top: 10, Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				text := "↑ ↓ seleziona  ·  Invio avvia  ·  Esc chiude"
@@ -620,24 +620,23 @@ func (m *Menu) layoutFooter(gtx layout.Context) layout.Dimensions {
 				return label.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return m.sessionButton(gtx, m.logoutButton, []string{"system-log-out", "system-logout"}, "Esci", session.Logout)
+				return m.sessionButton(gtx, m.logoutButton, "logout", "Esci", session.Logout)
 			}),
 			layout.Rigid(layout.Spacer{Width: 6}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return m.sessionButton(gtx, m.rebootButton, []string{"system-reboot"}, "Riavvia", session.Reboot)
+				return m.sessionButton(gtx, m.rebootButton, "reboot", "Riavvia", session.Reboot)
 			}),
 			layout.Rigid(layout.Spacer{Width: 6}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return m.sessionButton(gtx, m.shutdownButton, []string{"system-shutdown"}, "Spegni", session.PowerOff)
+				return m.sessionButton(gtx, m.shutdownButton, "shutdown", "Spegni", session.PowerOff)
 			}),
 		)
 	})
 }
 
-// sessionButton lays out a session action with an icon from the theme and its
-// name. The first icon name that resolves is used, so themes with only an
-// alternative spelling still show a glyph.
-func (m *Menu) sessionButton(gtx layout.Context, button *widget.Clickable, iconNames []string, label string, action func() error) layout.Dimensions {
+// sessionButton lays out a session action with its theme icon (or bundled
+// fallback) and its name.
+func (m *Menu) sessionButton(gtx layout.Context, button *widget.Clickable, iconKey, label string, action func() error) layout.Dimensions {
 	if button.Clicked(gtx) {
 		m.sessionAction(action)
 	}
@@ -652,16 +651,16 @@ func (m *Menu) sessionButton(gtx layout.Context, button *widget.Clickable, iconN
 				return roundedBackground(gtx, background, 8)
 			},
 			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: 12, Right: 12, Top: 4, Bottom: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: 13, Right: 13, Top: 5, Bottom: 5}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return exactSize(gtx, 20, 20, func(gtx layout.Context) layout.Dimensions {
-								return m.sessionIcon(gtx, iconNames)
+							return exactSize(gtx, 28, 28, func(gtx layout.Context) layout.Dimensions {
+								return m.sessionIcon(gtx, iconKey)
 							})
 						}),
-						layout.Rigid(layout.Spacer{Width: 6}.Layout),
+						layout.Rigid(layout.Spacer{Width: 7}.Layout),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							label := material.Label(m.theme, 14, label)
+							label := material.Label(m.theme, 15, label)
 							label.Color = palette.text
 							label.MaxLines = 1
 							return label.Layout(gtx)
@@ -673,24 +672,36 @@ func (m *Menu) sessionButton(gtx layout.Context, button *widget.Clickable, iconN
 	})
 }
 
-func (m *Menu) sessionIcon(gtx layout.Context, iconNames []string) layout.Dimensions {
-	for _, name := range iconNames {
-		if img := m.sessionImage(name); img != nil {
-			return img.Layout(gtx)
-		}
+func (m *Menu) sessionIcon(gtx layout.Context, iconKey string) layout.Dimensions {
+	if img := m.sessionImage(iconKey); img != nil {
+		return img.Layout(gtx)
 	}
-	return roundedBackground(gtx, palette.accent, 5)
+	return roundedBackground(gtx, palette.accent, 6)
 }
 
-func (m *Menu) sessionImage(name string) *widget.Image {
-	key := "session:" + name
+// sessionThemeIcons maps a session action to the freedesktop icon names used
+// by icon themes. The first name that resolves to a usable icon is used.
+var sessionThemeIcons = map[string][]string{
+	"logout":   {"system-log-out", "system-logout"},
+	"reboot":   {"system-reboot"},
+	"shutdown": {"system-shutdown"},
+}
+
+// sessionImage returns the icon for a session action, cached in the shared
+// image cache. It prefers the active theme's icon; when the theme has none or
+// its SVG would render incorrectly, it falls back to a bundled glyph.
+func (m *Menu) sessionImage(iconKey string) *widget.Image {
+	key := "session:" + iconKey
 	if cached, ok := m.images[key]; ok {
 		if cached.found {
 			return &cached.image
 		}
 		return nil
 	}
-	img, found := m.iconLoader.Load(name)
+	img, found := m.sessionThemeImage(iconKey)
+	if !found {
+		img, found = sessionIconImage(iconKey)
+	}
 	if !found {
 		m.images[key] = cachedImage{}
 		return nil
@@ -705,6 +716,19 @@ func (m *Menu) sessionImage(name string) *widget.Image {
 	}
 	m.images[key] = value
 	return &value.image
+}
+
+// sessionThemeImage resolves a theme icon for a session action. Only raster
+// icons are accepted (see Loader.LoadRaster): the SVG decoder renders many
+// theme SVGs incorrectly, so themes that provide these actions only as SVG
+// fall back to the bundled glyph instead of showing a smeared icon.
+func (m *Menu) sessionThemeImage(iconKey string) (image.Image, bool) {
+	for _, name := range sessionThemeIcons[iconKey] {
+		if img, found := m.iconLoader.LoadRaster(name); found {
+			return img, true
+		}
+	}
+	return nil, false
 }
 
 // sessionAction runs a session command and closes the menu on success so the
