@@ -15,8 +15,9 @@ xkbcommon.
 - localized names, comments, and keywords;
 - categories, incremental search, and sorted results;
 - persistent favorites in `$XDG_CONFIG_HOME/menu-easy/config.json`;
-- PNG/JPEG icons from the active GTK icon theme, with a generated fallback;
+- PNG/JPEG/SVG/XPM icons from the active GTK icon theme, with a generated fallback;
 - safe process launching without passing commands through a shell;
+- logout, reboot, and power-off buttons in the footer;
 - support for `Terminal=true` applications;
 - closes on `Esc`, focus loss, or after launching an application;
 - native Xorg and Wayland backends in the same binary.

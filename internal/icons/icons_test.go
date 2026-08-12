@@ -54,6 +54,63 @@ func TestLoadScalableSVGIcon(t *testing.T) {
 	}
 }
 
+func TestLoadXPMIcon(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "TestTheme", "apps", "64", "demo.xpm")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`/* XPM */
+static char *demo_xpm[] = {
+"4 4 2 1",
+" 	c None",
+"R	c #ff0000",
+"RRRR",
+"R  R",
+"R  R",
+"RRRR"
+};`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &Loader{
+		themes: []string{"TestTheme"},
+		roots:  []string{root},
+		cache:  make(map[string]cached),
+	}
+	img, found := loader.Load("demo")
+	if !found {
+		t.Fatal("XPM icon was not resolved")
+	}
+	if got := img.Bounds().Dx(); got != 4 {
+		t.Fatalf("width=%d, want 4", got)
+	}
+	if _, _, _, alpha := img.At(0, 0).RGBA(); alpha == 0 {
+		t.Fatal("border pixel is transparent")
+	}
+	if _, _, _, alpha := img.At(2, 2).RGBA(); alpha != 0 {
+		t.Fatal("center pixel should be transparent (None)")
+	}
+}
+
+func TestLoadActionsIcon(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "TestTheme", "actions", "16", "system-log-out.png")
+	if err := writePNG(path); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &Loader{
+		themes: []string{"TestTheme"},
+		roots:  []string{root},
+		cache:  make(map[string]cached),
+	}
+	if _, found := loader.Load("system-log-out"); !found {
+		t.Fatal("action icon in <theme>/actions/<size> was not resolved")
+	}
+}
+
 func TestLoadDirectRootIcon(t *testing.T) {
 	root := t.TempDir()
 	if err := writePNG(filepath.Join(root, "freedoom.png")); err != nil {

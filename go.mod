@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	gioui.org v0.10.1
+	github.com/fyne-io/image v0.1.1
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 )

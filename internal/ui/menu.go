@@ -22,6 +22,7 @@ import (
 	"menu-easy/internal/desktop"
 	appicons "menu-easy/internal/icons"
 	"menu-easy/internal/launch"
+	"menu-easy/internal/session"
 	"menu-easy/internal/windowctrl"
 )
 
@@ -82,6 +83,10 @@ type Menu struct {
 	rows            map[string]*rowControls
 	iconLoader      *appicons.Loader
 	images          map[string]cachedImage
+
+	logoutButton   *widget.Clickable
+	rebootButton   *widget.Clickable
+	shutdownButton *widget.Clickable
 }
 
 func New(window *app.Window, entries []desktop.Entry, cfg config.Config, configPath string) *Menu {
@@ -116,6 +121,9 @@ func New(window *app.Window, entries []desktop.Entry, cfg config.Config, configP
 	for _, entry := range entries {
 		menu.rows[entry.ID] = new(rowControls)
 	}
+	menu.logoutButton = new(widget.Clickable)
+	menu.rebootButton = new(widget.Clickable)
+	menu.shutdownButton = new(widget.Clickable)
 	return menu
 }
 
@@ -219,7 +227,7 @@ func (m *Menu) Layout(gtx layout.Context) layout.Dimensions {
 			return m.layoutBody(gtx, visible)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return exactHeight(gtx, 34, m.layoutFooter)
+			return exactHeight(gtx, 48, m.layoutFooter)
 		}),
 	)
 }
@@ -612,12 +620,101 @@ func (m *Menu) layoutFooter(gtx layout.Context) layout.Dimensions {
 				return label.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				label := material.Caption(m.theme, "Xorg · Wayland")
-				label.Color = palette.muted
-				return label.Layout(gtx)
+				return m.sessionButton(gtx, m.logoutButton, []string{"system-log-out", "system-logout"}, "Esci", session.Logout)
+			}),
+			layout.Rigid(layout.Spacer{Width: 6}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return m.sessionButton(gtx, m.rebootButton, []string{"system-reboot"}, "Riavvia", session.Reboot)
+			}),
+			layout.Rigid(layout.Spacer{Width: 6}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return m.sessionButton(gtx, m.shutdownButton, []string{"system-shutdown"}, "Spegni", session.PowerOff)
 			}),
 		)
 	})
+}
+
+// sessionButton lays out a session action with an icon from the theme and its
+// name. The first icon name that resolves is used, so themes with only an
+// alternative spelling still show a glyph.
+func (m *Menu) sessionButton(gtx layout.Context, button *widget.Clickable, iconNames []string, label string, action func() error) layout.Dimensions {
+	if button.Clicked(gtx) {
+		m.sessionAction(action)
+	}
+	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		semantic.Button.Add(gtx.Ops)
+		background := color.NRGBA{}
+		if button.Hovered() {
+			background = palette.hover
+		}
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				return roundedBackground(gtx, background, 8)
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: 12, Right: 12, Top: 4, Bottom: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return exactSize(gtx, 20, 20, func(gtx layout.Context) layout.Dimensions {
+								return m.sessionIcon(gtx, iconNames)
+							})
+						}),
+						layout.Rigid(layout.Spacer{Width: 6}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							label := material.Label(m.theme, 14, label)
+							label.Color = palette.text
+							label.MaxLines = 1
+							return label.Layout(gtx)
+						}),
+					)
+				})
+			},
+		)
+	})
+}
+
+func (m *Menu) sessionIcon(gtx layout.Context, iconNames []string) layout.Dimensions {
+	for _, name := range iconNames {
+		if img := m.sessionImage(name); img != nil {
+			return img.Layout(gtx)
+		}
+	}
+	return roundedBackground(gtx, palette.accent, 5)
+}
+
+func (m *Menu) sessionImage(name string) *widget.Image {
+	key := "session:" + name
+	if cached, ok := m.images[key]; ok {
+		if cached.found {
+			return &cached.image
+		}
+		return nil
+	}
+	img, found := m.iconLoader.Load(name)
+	if !found {
+		m.images[key] = cachedImage{}
+		return nil
+	}
+	value := cachedImage{
+		found: true,
+		image: widget.Image{
+			Src:      paint.NewImageOp(img),
+			Fit:      widget.Contain,
+			Position: layout.Center,
+		},
+	}
+	m.images[key] = value
+	return &value.image
+}
+
+// sessionAction runs a session command and closes the menu on success so the
+// confirmation dialog (or the new session) is not hidden behind it.
+func (m *Menu) sessionAction(action func() error) {
+	if err := action(); err != nil {
+		m.status = "Azione non riuscita: " + err.Error()
+		return
+	}
+	m.window.Perform(system.ActionClose)
 }
 
 func roundedBackground(gtx layout.Context, background color.NRGBA, radius unit.Dp) layout.Dimensions {

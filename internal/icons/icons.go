@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	_ "github.com/fyne-io/image/xpm" // registers the XPM decoder for image.Decode
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
 )
@@ -22,9 +23,9 @@ type cached struct {
 	found bool
 }
 
-// Loader resolves PNG/JPEG/GIF/SVG application icons from the active GTK theme and
-// the freedesktop hicolor fallback. Unsupported formats simply use the UI's
-// generated fallback tile.
+// Loader resolves PNG/JPEG/GIF/SVG/XPM application icons from the active GTK
+// theme and the freedesktop hicolor fallback. Unsupported formats simply use
+// the UI's generated fallback tile.
 type Loader struct {
 	themes []string
 	roots  []string
@@ -77,25 +78,27 @@ func (l *Loader) candidates(name string) []string {
 	if filepath.IsAbs(name) {
 		return []string{name}
 	}
-	extensions := []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz"}
+	extensions := []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".xpm"}
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".svg", ".svgz", ".xpm":
 		extensions = []string{""}
 	}
-	sizes := []string{"64", "48", "96", "32", "128", "256"}
+	sizes := []string{"64", "48", "96", "32", "128", "256", "16"}
 	xdgSizes := []string{"64x64", "48x48", "96x96", "32x32", "128x128", "256x256"}
 	var result []string
 	for _, root := range l.roots {
 		for _, theme := range l.themes {
 			for _, ext := range extensions {
-				for _, size := range sizes {
-					result = append(result, filepath.Join(root, theme, "apps", size, name+ext))
+				for _, category := range []string{"apps", "actions"} {
+					for _, size := range sizes {
+						result = append(result, filepath.Join(root, theme, category, size, name+ext))
+					}
+					result = append(result, filepath.Join(root, theme, category, "scalable", name+ext))
+					for _, size := range xdgSizes {
+						result = append(result, filepath.Join(root, theme, size, category, name+ext))
+					}
+					result = append(result, filepath.Join(root, theme, "scalable", category, name+ext))
 				}
-				result = append(result, filepath.Join(root, theme, "apps", "scalable", name+ext))
-				for _, size := range xdgSizes {
-					result = append(result, filepath.Join(root, theme, size, "apps", name+ext))
-				}
-				result = append(result, filepath.Join(root, theme, "scalable", "apps", name+ext))
 				result = append(result, filepath.Join(root, theme, name+ext))
 			}
 		}
