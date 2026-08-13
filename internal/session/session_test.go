@@ -14,6 +14,7 @@ func TestLogoutCommandOrdersDesktopFirst(t *testing.T) {
 		{"MATE", "mate-session-save"},
 		{"ubuntu:GNOME", "gnome-session-quit"},
 		{"XFCE", "xfce4-session-logout"},
+		{"icewm", "icesh"},
 		{"", "cinnamon-session-quit"},
 	}
 	for _, c := range cases {
@@ -33,6 +34,13 @@ func TestLogoutCommandDropsLoginctlWithoutSessionID(t *testing.T) {
 		if args[0] == "loginctl" {
 			t.Fatal("loginctl fallback should be absent without a session id")
 		}
+	}
+}
+
+func TestLogoutCommandUsesIceWMLogoutAction(t *testing.T) {
+	commands := logoutCommands("icewm", "")
+	if got, want := commands[0], []string{"icesh", "logout"}; got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("logoutCommands(\"icewm\")[0] = %#v, want %#v", got, want)
 	}
 }
 

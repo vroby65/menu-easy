@@ -5,6 +5,7 @@ package windowctrl
 /*
 #cgo LDFLAGS: -lX11
 #include <stdlib.h>
+#include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
@@ -31,6 +32,55 @@ static void setAtomProperty(Display *display, Window window, const char *propert
 	Atom property = XInternAtom(display, propertyName, False);
 	Atom atom = XInternAtom(display, atomName, False);
 	XChangeProperty(display, window, property, XA_ATOM, 32, PropModeReplace, (unsigned char *)&atom, 1);
+}
+
+static void addNetWMState(Display *display, Window window, const char *atomName) {
+	Atom state = XInternAtom(display, "_NET_WM_STATE", False);
+	Atom atom = XInternAtom(display, atomName, False);
+	XEvent event;
+	memset(&event, 0, sizeof(event));
+	event.xclient.type = ClientMessage;
+	event.xclient.display = display;
+	event.xclient.window = window;
+	event.xclient.message_type = state;
+	event.xclient.format = 32;
+	event.xclient.data.l[0] = 1;
+	event.xclient.data.l[1] = atom;
+	event.xclient.data.l[3] = 1;
+	XSendEvent(display, XDefaultRootWindow(display), False,
+		SubstructureRedirectMask | SubstructureNotifyMask, &event);
+}
+
+static void setMenuWindowState(Display *display, Window window) {
+	Atom property = XInternAtom(display, "_NET_WM_STATE", False);
+	Atom atoms[2];
+	atoms[0] = XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", False);
+	atoms[1] = XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", False);
+	XChangeProperty(display, window, property, XA_ATOM, 32, PropModeReplace, (unsigned char *)atoms, 2);
+	addNetWMState(display, window, "_NET_WM_STATE_SKIP_TASKBAR");
+	addNetWMState(display, window, "_NET_WM_STATE_SKIP_PAGER");
+}
+
+static void setWindowBackground(Display *display, Window window, unsigned char red, unsigned char green, unsigned char blue) {
+	XColor color;
+	color.red = (unsigned short)red * 257;
+	color.green = (unsigned short)green * 257;
+	color.blue = (unsigned short)blue * 257;
+	color.flags = DoRed | DoGreen | DoBlue;
+	if (XAllocColor(display, XDefaultColormap(display, XDefaultScreen(display)), &color)) {
+		XSetWindowBackground(display, window, color.pixel);
+		XClearWindow(display, window);
+	}
+}
+
+static int getWindowSize(Display *display, Window window, int *width, int *height) {
+	XWindowAttributes attrs;
+	if (!XGetWindowAttributes(display, window, &attrs) || attrs.width <= 0 || attrs.height <= 0) {
+		return 0;
+	}
+	*width = attrs.width;
+	*height = attrs.height;
+	return 1;
 }
 
 static int getCardinalProperty(Display *display, Window window, const char *name, unsigned long *out, int max) {
@@ -65,6 +115,7 @@ import "C"
 
 import (
 	"image"
+	"image/color"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -77,6 +128,7 @@ type Controller struct {
 	display unsafe.Pointer
 	window  uintptr
 	size    image.Point
+	bg      color.NRGBA
 	placed  bool
 }
 
@@ -92,8 +144,14 @@ func (c *Controller) SetX11View(event app.X11ViewEvent) {
 	}
 	c.display = event.Display
 	c.window = event.Window
+	c.applyBackground()
+	c.readSize()
 	c.applyHints()
 	c.Place()
+}
+
+func (c *Controller) SetBackground(background color.NRGBA) {
+	c.bg = background
 }
 
 func (c *Controller) SetSize(size image.Point) {
@@ -124,6 +182,7 @@ func (c *Controller) applyHints() {
 	window := C.Window(c.window)
 	c.applyNoDecorations(display, window)
 	c.applyMenuType(display, window)
+	c.applyTaskbarHints(display, window)
 	C.XFlush(display)
 }
 
@@ -137,6 +196,34 @@ func (c *Controller) applyMenuType(display *C.Display, window C.Window) {
 	atom := C.CString("_NET_WM_WINDOW_TYPE_MENU")
 	defer C.free(unsafe.Pointer(atom))
 	C.setAtomProperty(display, window, property, atom)
+}
+
+func (c *Controller) applyTaskbarHints(display *C.Display, window C.Window) {
+	C.setMenuWindowState(display, window)
+}
+
+func (c *Controller) applyBackground() {
+	if c.bg.A == 0 || c.display == nil || c.window == 0 {
+		return
+	}
+	C.setWindowBackground(
+		(*C.Display)(c.display),
+		C.Window(c.window),
+		C.uchar(c.bg.R),
+		C.uchar(c.bg.G),
+		C.uchar(c.bg.B),
+	)
+}
+
+func (c *Controller) readSize() {
+	if c.size.X > 0 && c.size.Y > 0 {
+		return
+	}
+	var width, height C.int
+	if C.getWindowSize((*C.Display)(c.display), C.Window(c.window), &width, &height) == 0 {
+		return
+	}
+	c.size = image.Pt(int(width), int(height))
 }
 
 func workarea(display *C.Display) (image.Rectangle, image.Rectangle) {

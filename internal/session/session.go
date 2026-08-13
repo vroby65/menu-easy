@@ -15,7 +15,7 @@ import (
 // session manager, falling back to the other common managers and finally to
 // loginctl.
 func Logout() error {
-	return runFirst(logoutCommands(os.Getenv("XDG_CURRENT_DESKTOP"), os.Getenv("XDG_SESSION_ID")), exec.LookPath)
+	return runFirst(logoutCommands(currentDesktop(), os.Getenv("XDG_SESSION_ID")), exec.LookPath)
 }
 
 // Reboot restarts the machine through logind, which prompts for authorization
@@ -61,8 +61,19 @@ func logoutCommands(desktop, sessionID string) [][]string {
 		commands[0], commands[2] = commands[2], commands[0]
 	case strings.Contains(strings.ToLower(desktop), "xfce"):
 		commands[0], commands[3] = commands[3], commands[0]
+	case strings.Contains(strings.ToLower(desktop), "icewm"):
+		commands = append([][]string{{"icesh", "logout"}}, commands...)
 	}
 	return commands
+}
+
+func currentDesktop() string {
+	return strings.Join([]string{
+		os.Getenv("XDG_CURRENT_DESKTOP"),
+		os.Getenv("DESKTOP_SESSION"),
+		os.Getenv("GDMSESSION"),
+		os.Getenv("WINDOWMANAGER"),
+	}, ":")
 }
 
 // runFirst starts the first command whose executable is available and returns

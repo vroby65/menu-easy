@@ -17,6 +17,8 @@ xkbcommon.
 - persistent favorites in `$XDG_CONFIG_HOME/menu-easy/config.json`;
 - PNG/JPEG/SVG/XPM icons from the active desktop/window-manager icon theme,
   including inherited themes and pixmap directories, with a generated fallback;
+- icon theme indexing starts after the first frame, so large themes do not block
+  the menu window from opening;
 - safe process launching without passing commands through a shell;
 - logout, reboot, and power-off buttons in the footer;
 - support for `Terminal=true` applications;
@@ -81,12 +83,15 @@ icesh toolbar
 icesh keys
 ```
 
+The footer logout button detects IceWM sessions and uses `icesh logout`.
+
 ## Xorg and Wayland
 
 The default binary contains both backends and selects the current session type
-at startup. On Wayland, the compositor decides the initial window position: the
-base protocol does not allow a portable application to anchor itself to
-absolute panel coordinates. All other features are the same.
+at startup. On Xorg, Menu Easy marks itself as a menu window and hides itself
+from the taskbar and pager. On Wayland, the compositor decides the initial
+window position: the base protocol does not allow a portable application to
+anchor itself to absolute panel coordinates. All other features are the same.
 
 To deliberately build a binary with only one backend:
 

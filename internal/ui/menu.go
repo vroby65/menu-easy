@@ -83,6 +83,9 @@ type Menu struct {
 	rows            map[string]*rowControls
 	iconLoader      *appicons.Loader
 	images          map[string]cachedImage
+	iconWarmupDone  chan *appicons.Loader
+	iconWarmupStart bool
+	iconsReady      bool
 
 	logoutButton   *widget.Clickable
 	rebootButton   *widget.Clickable
@@ -107,8 +110,8 @@ func New(window *app.Window, entries []desktop.Entry, cfg config.Config, configP
 		firstFrame:      true,
 		categoryButtons: make(map[string]*widget.Clickable),
 		rows:            make(map[string]*rowControls),
-		iconLoader:      appicons.NewLoader(),
 		images:          make(map[string]cachedImage),
+		iconWarmupDone:  make(chan *appicons.Loader, 1),
 	}
 	menu.search.SingleLine = true
 	menu.search.Submit = true
@@ -131,6 +134,7 @@ func Run(window *app.Window, menu *Menu) error {
 	var ops op.Ops
 	hadFocus := false
 	var controller windowctrl.Controller
+	controller.SetBackground(palette.background)
 	for {
 		event := window.Event()
 		controller.HandleEvent(event)
@@ -153,6 +157,7 @@ func Run(window *app.Window, menu *Menu) error {
 }
 
 func (m *Menu) Layout(gtx layout.Context) layout.Dimensions {
+	m.pollIconWarmup()
 	fillBackground(gtx, palette.background)
 
 	for _, category := range desktop.Categories {
@@ -216,6 +221,7 @@ func (m *Menu) Layout(gtx layout.Context) layout.Dimensions {
 
 	if m.firstFrame {
 		gtx.Execute(key.FocusCmd{Tag: &m.search})
+		m.startIconWarmup()
 		m.firstFrame = false
 	}
 
@@ -230,6 +236,31 @@ func (m *Menu) Layout(gtx layout.Context) layout.Dimensions {
 			return exactHeight(gtx, 60, m.layoutFooter)
 		}),
 	)
+}
+
+func (m *Menu) startIconWarmup() {
+	if m.iconWarmupStart {
+		return
+	}
+	m.iconWarmupStart = true
+	go func() {
+		iconLoader := appicons.NewLoader()
+		iconLoader.Warmup()
+		m.iconWarmupDone <- iconLoader
+		m.window.Invalidate()
+	}()
+}
+
+func (m *Menu) pollIconWarmup() {
+	if m.iconsReady {
+		return
+	}
+	select {
+	case iconLoader := <-m.iconWarmupDone:
+		m.iconLoader = iconLoader
+		m.iconsReady = true
+	default:
+	}
 }
 
 func (m *Menu) handleKeys(gtx layout.Context, count int) {
@@ -556,6 +587,9 @@ func (m *Menu) layoutAppIcon(gtx layout.Context, entry desktop.Entry) layout.Dim
 }
 
 func (m *Menu) appImage(entry desktop.Entry) *widget.Image {
+	if !m.iconsReady || m.iconLoader == nil {
+		return nil
+	}
 	if cached, ok := m.images[entry.ID]; ok {
 		if cached.found {
 			return &cached.image
@@ -692,13 +726,20 @@ var sessionThemeIcons = map[string][]string{
 // its SVG would render incorrectly, it falls back to a bundled glyph.
 func (m *Menu) sessionImage(iconKey string) *widget.Image {
 	key := "session:" + iconKey
+	if !m.iconsReady {
+		key = "session-fallback:" + iconKey
+	}
 	if cached, ok := m.images[key]; ok {
 		if cached.found {
 			return &cached.image
 		}
 		return nil
 	}
-	img, found := m.sessionThemeImage(iconKey)
+	var img image.Image
+	var found bool
+	if m.iconsReady {
+		img, found = m.sessionThemeImage(iconKey)
+	}
 	if !found {
 		img, found = sessionIconImage(iconKey)
 	}
@@ -723,6 +764,9 @@ func (m *Menu) sessionImage(iconKey string) *widget.Image {
 // theme SVGs incorrectly, so themes that provide these actions only as SVG
 // fall back to the bundled glyph instead of showing a smeared icon.
 func (m *Menu) sessionThemeImage(iconKey string) (image.Image, bool) {
+	if !m.iconsReady || m.iconLoader == nil {
+		return nil, false
+	}
 	for _, name := range sessionThemeIcons[iconKey] {
 		if img, found := m.iconLoader.LoadRaster(name); found {
 			return img, true

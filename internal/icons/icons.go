@@ -108,6 +108,11 @@ func (l *Loader) Load(name string) (image.Image, bool) {
 	return l.load(name, false)
 }
 
+// Warmup builds the icon path index without decoding images.
+func (l *Loader) Warmup() {
+	l.ensureIndex()
+}
+
 // LoadRaster behaves like Load but only accepts raster formats (PNG, JPEG,
 // GIF, XPM). SVG documents are skipped: the bundled SVG decoder renders many
 // real-world theme SVGs incorrectly (smeared gradients, solid blocks), so

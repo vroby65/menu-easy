@@ -153,6 +153,26 @@ func TestLoadRasterAcceptsPNG(t *testing.T) {
 	}
 }
 
+func TestWarmupBuildsIndex(t *testing.T) {
+	root := t.TempDir()
+	if err := writePNG(filepath.Join(root, "TestTheme", "apps", "64", "demo.png")); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := &Loader{
+		themes: []string{"TestTheme"},
+		roots:  []string{root},
+		cache:  make(map[string]cached),
+	}
+	loader.Warmup()
+	if !loader.indexBuilt {
+		t.Fatal("Warmup did not mark the index as built")
+	}
+	if len(loader.index["demo"]) == 0 {
+		t.Fatal("Warmup did not index theme icons")
+	}
+}
+
 func TestLoadDirectRootIcon(t *testing.T) {
 	root := t.TempDir()
 	if err := writePNG(filepath.Join(root, "freedoom.png")); err != nil {
